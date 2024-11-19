@@ -1,0 +1,54 @@
+# Ignore node_modules in any directory
+node_modules/
+frontendnextjs/node_modules/
+
+# Ignore environment variables in any directory
+**/.env
+**/.env.*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+.cache/
+.next/
+
+# Dependency directories
+jspm_packages/
+bower_components/
+
+# IDE or Editor specific files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Debugging files
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Docker
+Dockerfile
+docker-compose.yml
