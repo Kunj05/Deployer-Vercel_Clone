@@ -490,18 +490,6 @@ The build server uses a custom Ubuntu-based image with:
 - Git
 - npm/npx
 
-**Dockerfile highlights:**
-```dockerfile
-FROM ubuntu:focal
-RUN apt-get update
-RUN curl -sL https://deb.nodesource.com/setup_20.x | bash -
-RUN apt-get install -y nodejs git
-WORKDIR /home/app
-COPY main.sh script.js package*.json ./
-RUN npm install
-ENTRYPOINT ["/home/app/main.sh"]
-```
-
 ## 🔒 Security Considerations
 
 - **Environment Variables**: Sensitive credentials are passed via ECS task overrides
@@ -537,35 +525,6 @@ ENTRYPOINT ["/home/app/main.sh"]
 #### 6. Frontend Build Issues
 - **Symptom**: Next.js application fails to start or build
 - **Solution**: Check Node.js version (18+) and run `npm install` in client directory
-
-### Debugging Commands
-
-```bash
-# Check API server logs
-node api-server/index.js
-
-# Test deployment API
-node api-server/test-deployment.js
-
-# Check web client locally
-cd client && npm run dev
-
-# Check build status in ECS
-aws ecs list-tasks --cluster your-cluster-name
-
-# View build server logs
-aws logs get-log-events --log-group /ecs/builder-task
-
-# Check database connection
-cd client && npx drizzle-kit studio
-```
-
-# View build server logs
-aws logs get-log-events --log-group /ecs/builder-task
-
-# Check database connection
-cd client && npx drizzle-kit studio
-```
 
 - Check the troubleshooting section above
 - Review AWS ECS and S3 documentation for infrastructure issues
