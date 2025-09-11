@@ -12,6 +12,8 @@
 - **S3 Static Hosting**: Deployed applications are served from AWS S3 with CloudFront-like proxy
 - **Redis Integration**: Real-time communication and logging via Redis pub/sub
 
+![App Screenshot](Deployer)
+
 ## 🏗️ Architecture
 
 Deployer consists of four main components:
