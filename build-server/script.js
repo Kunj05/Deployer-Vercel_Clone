@@ -9,6 +9,10 @@ require('dotenv').config();
 
 const publisher = new Redis(process.env.REDIS_URL);
 
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL
+});
+ 
 const s3Client = new S3Client({
     region: process.env.REGION_NAME,
     credentials: {
@@ -17,12 +21,25 @@ const s3Client = new S3Client({
     }
 });
 
-const BUILD_ID = process.env.BUILD_ID;  // Use buildId passed as env variable
-const LOG_FILE_PATH = path.join(__dirname, 'build.log');
+function isRetryableError(logText) {
+    const message = logText.toLowerCase();
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL
-});
+    const retryableKeywords = [
+        'network error',
+        'timeout',
+        'econnreset',
+        'eai_again', 
+        'temporarily unavailable',
+        'fetch failed',
+        'npm err! code eai_again',
+        'npm err! network'
+    ];
+
+    return retryableKeywords.some((keyword) => message.includes(keyword));
+}
+
+const BUILD_ID = process.env.BUILD_ID; 
+const LOG_FILE_PATH = path.join(__dirname, 'build.log');
 
 let logFileStream;
 
@@ -54,6 +71,56 @@ async function updateJobStatus(status, extra = {}) {
         await publishLog(`Job status updated: ${status}`);
     } catch (err) {
         console.error('Failed to update job status:', err);
+    }
+}
+
+
+async function uploadLogFile() {
+    publishLog('Uploading build log file...');
+    const logS3Key = `__outputs/${BUILD_ID}/build.log`;
+
+    try {
+        const command = new PutObjectCommand({
+            Bucket: 'deployer-vercel-clone',
+            Key: logS3Key,
+            Body: fs.createReadStream(LOG_FILE_PATH),
+            ContentType: 'text/plain'
+        });
+        await s3Client.send(command);
+        publishLog('Build log uploaded');
+    } catch (err) {
+        console.error('Failed to upload build log:', err);
+        publishLog(`Failed to upload build log: ${err.message}`);
+    }
+}
+
+async function uploadFiles(distFolderContents, distFolderPath, baseFolderPath) {
+    publishLog('Starting to upload build files...');
+    for (const dirent of distFolderContents) {
+        const filePath = path.join(distFolderPath, dirent.name);
+        const s3Key = path.relative(baseFolderPath, filePath).replace(/\\/g, '/');
+
+        if (dirent.isDirectory()) {
+            const subDirContents = fs.readdirSync(filePath, { withFileTypes: true });
+            await uploadFiles(subDirContents, filePath, baseFolderPath);
+            continue;
+        }
+
+        publishLog(`Uploading ${dirent.name}...`);
+        
+        try {
+            const command = new PutObjectCommand({
+                Bucket: 'deployer-vercel-clone',
+                Key: `__outputs/${BUILD_ID}/${s3Key}`,
+                Body: fs.createReadStream(filePath),
+                ContentType: mime.lookup(filePath) || 'application/octet-stream'
+            });
+            await s3Client.send(command);
+            publishLog(`Uploaded ${dirent.name}`);
+        } catch (uploadError) {
+            console.error(`Failed to upload ${dirent.name}: ${uploadError.message}`);
+            publishLog(`Failed to upload ${dirent.name}: ${uploadError.message}`);
+        }
     }
 }
 
@@ -115,63 +182,38 @@ async function init() {
 
             } catch (err) {
                 console.error(err);
-                await updateJobStatus('failed', { error_message: err.message });
+
+                let logContents = '';
+                try {
+                    logContents = readFileSync(LOG_FILE_PATH, 'utf-8');
+                } catch (readErr) {
+                    console.error('Failed to read log for error classification:', readErr);
+                }
+
+                const retryable = isRetryableError(logContents + err.message);
+                const newStatus = retryable ? 'retryable_failed' : 'permanent_failed';
+
+                await updateJobStatus(newStatus, {
+                    error_message: err.message
+                });
             }
         } else {
             publishLog(`Build process exited with code ${code}`);
-            await updateJobStatus('failed', { error_message: `Exit code ${code}` });
-            logFileStream.end();
+            let logContents = '';
+            try {
+                logContents = readFileSync(LOG_FILE_PATH, 'utf-8');
+            } catch (err) {
+                console.error('Failed to read log file:', err);
+            }
+
+            const retryable = isRetryableError(logContents);
+            const newStatus = retryable ? 'retryable_failed' : 'permanent_failed';
+
+            await updateJobStatus(newStatus, {
+                error_message: `Build failed with exit code ${code}`
+            });
         }
     });
-}
-
-async function uploadLogFile() {
-    publishLog('Uploading build log file...');
-    const logS3Key = `__outputs/${BUILD_ID}/build.log`;
-
-    try {
-        const command = new PutObjectCommand({
-            Bucket: 'deployer-vercel-clone',
-            Key: logS3Key,
-            Body: fs.createReadStream(LOG_FILE_PATH),
-            ContentType: 'text/plain'
-        });
-        await s3Client.send(command);
-        publishLog('Build log uploaded');
-    } catch (err) {
-        console.error('Failed to upload build log:', err);
-        publishLog(`Failed to upload build log: ${err.message}`);
-    }
-}
-
-async function uploadFiles(distFolderContents, distFolderPath, baseFolderPath) {
-    publishLog('Starting to upload build files...');
-    for (const dirent of distFolderContents) {
-        const filePath = path.join(distFolderPath, dirent.name);
-        const s3Key = path.relative(baseFolderPath, filePath).replace(/\\/g, '/');
-
-        if (dirent.isDirectory()) {
-            const subDirContents = fs.readdirSync(filePath, { withFileTypes: true });
-            await uploadFiles(subDirContents, filePath, baseFolderPath);
-            continue;
-        }
-
-        publishLog(`Uploading ${dirent.name}...`);
-
-        try {
-            const command = new PutObjectCommand({
-                Bucket: 'deployer-vercel-clone',
-                Key: `__outputs/${BUILD_ID}/${s3Key}`,
-                Body: fs.createReadStream(filePath),
-                ContentType: mime.lookup(filePath) || 'application/octet-stream'
-            });
-            await s3Client.send(command);
-            publishLog(`Uploaded ${dirent.name}`);
-        } catch (uploadError) {
-            console.error(`Failed to upload ${dirent.name}: ${uploadError.message}`);
-            publishLog(`Failed to upload ${dirent.name}: ${uploadError.message}`);
-        }
-    }
 }
 
 init();

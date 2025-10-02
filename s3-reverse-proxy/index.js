@@ -4,13 +4,13 @@ require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT;
-const Base_Path = process.env.BASE_PATH
+const Base_Path = process.env.BASE_PATH //"https://bucket_name.s3.amazonaws.com/_outputs/"
 
 const proxy = httpProxy.createProxy();
 
 app.use((req, res) => {
-    const hostname = req.hostname;
-    const subdomain = hostname.split('.')[0];
+    const hostname = req.hostname; //full hostname
+    const subdomain = hostname.split('.')[0]; //slug_name
 
     console.log(`Subdomain: ${subdomain}, Path: ${req.url}`);
 
@@ -35,3 +35,8 @@ proxy.on('error', (err, req, res) => {
 });
 
 app.listen(port, () => console.log(`Reverse Proxy running on port ${port}`));
+
+//
+//  a1.vercel.com -> https://bucket_name.s3.amazonaws.com/_outputs/{builder_id}/index.html
+//
+//
