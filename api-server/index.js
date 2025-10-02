@@ -3,13 +3,18 @@ const express = require('express');
 const { createServer } = require('http');
 const WebSocket = require('ws');
 const Redis = require('ioredis');
-const queue = require('./queue');
 const pool = require('./db');
+const { Queue } = require('bullmq');
 const { generateSlug } = require('random-word-slugs')
 require('dotenv').config();
 
 const API_PORT = process.env.API_PORT || 9000;
 const redis = new Redis(process.env.REDIS_URL);
+
+// Bull queue for jobs
+const buildQueue = new Queue('build_queue', {
+    connection: new Redis(process.env.REDIS_URL)
+});
 
 const app = express();
 app.use(express.json());
@@ -40,7 +45,7 @@ app.post('/project', async (req, res) => {
         );
 
         // Push job to Bull queue
-        await queue.add('build_job', job, {
+        await buildQueue.add('build_job', job, {
             attempts: 5,
             backoff: { type: 'exponential', delay: 2000 },
             removeOnComplete: true,

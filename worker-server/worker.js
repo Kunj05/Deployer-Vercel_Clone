@@ -1,8 +1,15 @@
 const { Worker } = require('bullmq');
 const { ECSClient, RunTaskCommand } = require('@aws-sdk/client-ecs');
 const Redis = require('ioredis');
-const pool = require('./db');  // <-- your Postgres connection
+const pool = require('./db');  
 require('dotenv').config();
+const express = require('express');
+const app = express();
+const PORT = 9001;
+
+//rediss://default:password@redis-12345.aivencloud.com:18663
+
+const redisPublisher = new Redis(process.env.REDIS_URL, { tls: {} }); 
 
 // AWS ECS Client
 const ecsClient = new ECSClient({
@@ -21,12 +28,9 @@ const config = {
     SECURITY_GROUP: process.env.SECURITY_GROUP_ID
 };
 
-// Redis publisher for logs
-const redis = new Redis(process.env.REDIS_URL);
-
 // Helper: publish logs to websocket subscribers
 async function publishLog(buildId, message) {
-    await redis.publish(`logs:${buildId}`, JSON.stringify({ buildId, message, ts: new Date() }));
+    await redisPublisher.publish(`logs:${buildId}`, JSON.stringify({ buildId, message, ts: new Date() }));
 }
 
 // Worker setup
@@ -94,11 +98,7 @@ const worker = new Worker(
         }
     },
     {
-        connection: {
-            host: 'localhost',
-            port: 6379,
-            // password: 'your_password' (if using Redis auth)
-        }
+        connection: new Redis(process.env.REDIS_URL)
     }
 );
 
@@ -133,4 +133,9 @@ worker.on('failed', async (job, err) => {
         );
         await publishLog(buildId, `Job failed (retrying): ${err.message}`);
     }
+});
+
+
+app.listen(PORT, () => {
+    console.log(`Worker health server listening on port ${PORT}`);
 });
