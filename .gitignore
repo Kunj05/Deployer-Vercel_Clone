@@ -50,5 +50,4 @@ temp/
 *.pid.lock
 
 # Docker
-Dockerfile
 docker-compose.yml
